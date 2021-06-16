@@ -847,12 +847,26 @@ export class CameraControls extends EventDispatcher {
 
 	}
 
+	getDistanceToFitBoxFromMesh(box3OrObject: _THREE.Box3 | _THREE.Object3D, enableTransition: boolean, {
+		paddingLeft = 0,
+		paddingRight = 0,
+		paddingBottom = 0,
+		paddingTop = 0
+	}: Partial<FitToOptions> = {}) {
+		return this.fitToBox(box3OrObject, enableTransition, {
+			paddingLeft,
+			paddingRight,
+			paddingBottom,
+			paddingTop
+		}, true);
+	}
+
 	fitToBox( box3OrObject: _THREE.Box3 | _THREE.Object3D, enableTransition: boolean, {
 		paddingLeft = 0,
 		paddingRight = 0,
 		paddingBottom = 0,
 		paddingTop = 0
-	}: Partial<FitToOptions> = {} ): void {
+	}: Partial<FitToOptions> = {}, dataOnly: boolean = false ): void | number {
 
 		const aabb = ( box3OrObject as _THREE.Box3 ).isBox3
 			? _box3A.copy( box3OrObject as _THREE.Box3 )
@@ -929,6 +943,11 @@ export class CameraControls extends EventDispatcher {
 		if ( isPerspectiveCamera( this._camera ) ) {
 
 			const distance = this.getDistanceToFitBox( bbSize.x, bbSize.y, bbSize.z );
+
+			if (dataOnly) {
+				return distance;
+			}
+
 			this.moveTo( center.x, center.y, center.z, enableTransition );
 			this.dollyTo( distance, enableTransition );
 			this.setFocalOffset( 0, 0, 0, enableTransition );
