@@ -78,7 +78,8 @@ export declare class CameraControls extends EventDispatcher {
     truck(x: number, y: number, enableTransition?: boolean): void;
     forward(distance: number, enableTransition?: boolean): void;
     moveTo(x: number, y: number, z: number, enableTransition?: boolean): void;
-    fitToBox(box3OrObject: _THREE.Box3 | _THREE.Object3D, enableTransition: boolean, { paddingLeft, paddingRight, paddingBottom, paddingTop }?: Partial<FitToOptions>): void;
+    getDistanceToFitBoxFromMesh(box3OrObject: _THREE.Box3 | _THREE.Object3D, enableTransition: boolean, { paddingLeft, paddingRight, paddingBottom, paddingTop }?: Partial<FitToOptions>): number | void;
+    fitToBox(box3OrObject: _THREE.Box3 | _THREE.Object3D, enableTransition: boolean, { paddingLeft, paddingRight, paddingBottom, paddingTop }?: Partial<FitToOptions>, dataOnly?: boolean): void | number;
     fitTo(box3OrObject: _THREE.Box3 | _THREE.Object3D, enableTransition: boolean, fitToOptions?: Partial<FitToOptions>): void;
     fitToSphere(sphereOrMesh: _THREE.Sphere | _THREE.Object3D, enableTransition: boolean): void;
     setLookAt(positionX: number, positionY: number, positionZ: number, targetX: number, targetY: number, targetZ: number, enableTransition?: boolean): void;

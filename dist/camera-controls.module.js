@@ -745,8 +745,18 @@ var CameraControls = (function (_super) {
         }
         this._needsUpdate = true;
     };
-    CameraControls.prototype.fitToBox = function (box3OrObject, enableTransition, _a) {
+    CameraControls.prototype.getDistanceToFitBoxFromMesh = function (box3OrObject, enableTransition, _a) {
         var _b = _a === void 0 ? {} : _a, _c = _b.paddingLeft, paddingLeft = _c === void 0 ? 0 : _c, _d = _b.paddingRight, paddingRight = _d === void 0 ? 0 : _d, _e = _b.paddingBottom, paddingBottom = _e === void 0 ? 0 : _e, _f = _b.paddingTop, paddingTop = _f === void 0 ? 0 : _f;
+        return this.fitToBox(box3OrObject, enableTransition, {
+            paddingLeft: paddingLeft,
+            paddingRight: paddingRight,
+            paddingBottom: paddingBottom,
+            paddingTop: paddingTop
+        }, true);
+    };
+    CameraControls.prototype.fitToBox = function (box3OrObject, enableTransition, _a, dataOnly) {
+        var _b = _a === void 0 ? {} : _a, _c = _b.paddingLeft, paddingLeft = _c === void 0 ? 0 : _c, _d = _b.paddingRight, paddingRight = _d === void 0 ? 0 : _d, _e = _b.paddingBottom, paddingBottom = _e === void 0 ? 0 : _e, _f = _b.paddingTop, paddingTop = _f === void 0 ? 0 : _f;
+        if (dataOnly === void 0) { dataOnly = false; }
         var aabb = box3OrObject.isBox3
             ? _box3A.copy(box3OrObject)
             : _box3A.setFromObject(box3OrObject);
@@ -789,6 +799,9 @@ var CameraControls = (function (_super) {
         var center = bb.getCenter(_v3B).applyQuaternion(rotation);
         if (isPerspectiveCamera(this._camera)) {
             var distance = this.getDistanceToFitBox(bbSize.x, bbSize.y, bbSize.z);
+            if (dataOnly) {
+                return distance;
+            }
             this.moveTo(center.x, center.y, center.z, enableTransition);
             this.dollyTo(distance, enableTransition);
             this.setFocalOffset(0, 0, 0, enableTransition);
