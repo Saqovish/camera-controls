@@ -18,6 +18,12 @@ export enum ACTION {
 	TOUCH_ZOOM_OFFSET,
 }
 
+export interface PointerInput {
+	pointerId: number;
+	clientX: number;
+	clientY: number;
+}
+
 type mouseButtonAction = ACTION.ROTATE | ACTION.TRUCK | ACTION.OFFSET | ACTION.DOLLY | ACTION.ZOOM | ACTION.NONE;
 type mouseWheelAction  = ACTION.ROTATE | ACTION.TRUCK | ACTION.OFFSET | ACTION.DOLLY | ACTION.ZOOM | ACTION.NONE;
 type singleTouchAction = ACTION.TOUCH_ROTATE | ACTION.TOUCH_TRUCK | ACTION.TOUCH_OFFSET | ACTION.DOLLY | ACTION.ZOOM | ACTION.NONE;
@@ -34,11 +40,12 @@ type multiTouchAction =
 	ACTION.NONE;
 
 export interface MouseButtons {
-	left  : mouseButtonAction;
-	middle: mouseButtonAction;
-	right : mouseButtonAction;
-	wheel : mouseWheelAction;
-	// We can also add shiftLeft, altLeft and etc if someone wants...
+	left     : mouseButtonAction;
+	middle   : mouseButtonAction;
+	right    : mouseButtonAction;
+	wheel    : mouseWheelAction;
+	shiftLeft: mouseButtonAction;
+	// We can also add altLeft and etc if someone wants...
 }
 
 export interface Touches {
@@ -55,22 +62,12 @@ export interface FitToOptions {
 }
 
 export interface CameraControlsEventMap {
-	update: { type: 'update' };
-	wake  : { type: 'wake' };
-	sleep : { type: 'sleep' };
-
-	controlstart: {
-		type: 'controlstart',
-		originalEvent: MouseEvent | TouchEvent | WheelEvent,
-	};
-	control: {
-		type: 'control',
-		originalEvent: MouseEvent | TouchEvent | WheelEvent,
-	};
-	controlend: {
-		type: 'controlend',
-		originalEvent: MouseEvent | TouchEvent | WheelEvent,
-	};
+	update      : { type: 'update' };
+	wake        : { type: 'wake' };
+	sleep       : { type: 'sleep' };
+	controlstart: { type: 'controlstart' };
+	control     : { type: 'control' };
+	controlend  : { type: 'controlend' };
 }
 
 export function isPerspectiveCamera( camera: _THREE.Camera ): camera is _THREE.PerspectiveCamera {
