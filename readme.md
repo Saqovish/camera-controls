@@ -17,19 +17,23 @@ A camera control for three.js, similar to THREE.OrbitControls yet supports smoot
 - [fit-to-bounding-sphere](https://yomotsu.github.io/camera-controls/examples/fit-to-bounding-sphere.html)
 - [boundary](https://yomotsu.github.io/camera-controls/examples/boundary.html)
 - [focal offset](https://yomotsu.github.io/camera-controls/examples/focal-offset.html)
+- [click to set orbit point](https://yomotsu.github.io/camera-controls/examples/click-to-set-orbit-point.html)
 - [`viewport` within the canvas](https://yomotsu.github.io/camera-controls/examples/viewport.html)
 - [z-up camera](https://yomotsu.github.io/camera-controls/examples/camera-up.html)
 - [orthographic](https://yomotsu.github.io/camera-controls/examples/orthographic.html)
 - [user input config](https://yomotsu.github.io/camera-controls/examples/config.html)
 - [combined gestures](https://yomotsu.github.io/camera-controls/examples/combined-gestures.html)
 - [keyboard events](https://yomotsu.github.io/camera-controls/examples/keyboard.html)
+- [rest and sleep events](https://yomotsu.github.io/camera-controls/examples/rest-and-sleep.html)
 - [changing-cursor](https://yomotsu.github.io/camera-controls/examples/cursor.html)
 - [collision](https://yomotsu.github.io/camera-controls/examples/collision.html)
 - [first-person](https://yomotsu.github.io/camera-controls/examples/first-person.html)
 - [third-person](https://yomotsu.github.io/meshwalk/example/5_terrain.html) (with [meshwalk](https://github.com/yomotsu/meshwalk))
+- [auto rotate](https://yomotsu.github.io/camera-controls/examples/auto-rotate.html)
 - [camera shake effect](https://yomotsu.github.io/camera-controls/examples/effect-shake.html)
 - [rotate with duration and easing](https://yomotsu.github.io/camera-controls/examples/easing.html) (with [tween.js](https://github.com/tweenjs/tween.js))
 - [path animation](https://yomotsu.github.io/camera-controls/examples/path-animation.html) (with [tween.js](https://github.com/tweenjs/tween.js))
+- [complex transitions with `await`](https://yomotsu.github.io/camera-controls/examples/await-transitions.html)
 - [dragging outside the iframe](https://yomotsu.github.io/camera-controls/examples/iframe.html)
 
 ## Usage
@@ -74,7 +78,7 @@ CameraControls.install( { THREE: THREE } );
 
 You can then proceed to use CameraControls.
 
-Note: If you don't want to use full of three.js (tree-shaking for example), make a subset to install.
+Note: If you do not wish to use enter three.js to reduce file size(tree-shaking for example), make a subset to install.
 
 ```js
 import {
@@ -91,7 +95,7 @@ import {
 	MathUtils,
 } from 'three';
 
-const subsetTHREE = {
+const subsetOfTHREE = {
 	MOUSE     : MOUSE,
 	Vector2   : Vector2,
 	Vector3   : Vector3,
@@ -108,7 +112,7 @@ const subsetTHREE = {
 	},
 };
 
-CameraControls.install( { THREE: subsetTHREE } );
+CameraControls.install( { THREE: subsetOfTHREE } );
 ```
 
 ## Constructor
@@ -124,7 +128,7 @@ CameraControls.install( { THREE: subsetTHREE } );
 
 CameraControls uses Spherical Coordinates for orbit rotations.
 
-If your camera is Y-up, Azimuthal angle will be the angle for y-axis rotation and Polar angle will be the angle for vertical position.
+If your camera is Y-up, the Azimuthal angle will be the angle for y-axis rotation and the Polar angle will be the angle for vertical position.
 
 ![](https://raw.githubusercontent.com/yomotsu/camera-controls/dev/examples/fig1.svg)
 
@@ -140,47 +144,59 @@ See [the demo](https://github.com/yomotsu/camera-movement-comparison#dolly-vs-zo
 
 | Name                      | Type      | Default     | Description |
 | ------------------------- | --------- | ----------- | ----------- |
+| `.camera`                 | `THREE.Perspective \| THREE.Orthographic` | N/A | The camera to be controlled |
 | `.enabled`                | `boolean` | `true`      | Whether or not the controls are enabled. |
+| `.active`                 | `boolean` | `false`     | Returns `true` if the controls are active updating. |
 | `.currentAction`          | `ACTION`  | N/A         | Getter for the current `ACTION`. |
-| `.distance`               | `number`  | N/A         | current distance. |
-| `.minDistance`            | `number`  | `0`         | Minimum distance for dolly. |
+| `.distance`               | `number`  | N/A         | Current distance. |
+| `.minDistance`            | `number`  | `0`         | Minimum distance for dolly. The value must be higher than `0` |
 | `.maxDistance`            | `number`  | `Infinity`  | Maximum distance for dolly. |
-| `.polarAngle`             | `number`  | N/A         | current polarAngle in radians. |
+| `.minZoom` 	              | `number`  | `0.01`      | Minimum camera zoom. |
+| `.maxZoom` 	              | `number`  | `Infinity`  | Maximum camera zoom. |
+| `.polarAngle`             | `number`  | N/A         | Current polarAngle in radians. |
 | `.minPolarAngle`          | `number`  | `0`         | In radians. |
 | `.maxPolarAngle`          | `number`  | `Math.PI`   | In radians. |
-| `.azimuthAngle`           | `number`  | N/A         | current azimuthAngle in radians. |
+| `.azimuthAngle`           | `number`  | N/A         | current azimuthAngle in radians ¹. |
 | `.minAzimuthAngle`        | `number`  | `-Infinity` | In radians. |
 | `.maxAzimuthAngle`        | `number`  | `Infinity`  | In radians. |
 | `.boundaryFriction`       | `number`  | `0.0`       | Friction ratio of the boundary. |
 | `.boundaryEnclosesCamera` | `boolean` | `false`     | Whether camera position should be enclosed in the boundary or not. |
-| `.dampingFactor`          | `number`  | `0.05`      | The damping inertia |
-| `.draggingDampingFactor`  | `number`  | `0.25`      | The damping inertia while dragging |
+| `.dampingFactor`          | `number`  | `0.05`      | The damping inertia. The value must be between `Math.EPSILON` to `1` inclusive. Setting `1` to disable smooth transitions. |
+| `.draggingDampingFactor`  | `number`  | `0.25`      | The damping inertia while dragging. The value must be between `Math.EPSILON` to `1` inclusive. Setting `1` to disable smooth transitions. |
 | `.azimuthRotateSpeed`     | `number`  | `1.0`       | Speed of azimuth rotation. |
 | `.polarRotateSpeed`       | `number`  | `1.0`       | Speed of polar rotation. |
 | `.dollySpeed`             | `number`  | `1.0`       | Speed of mouse-wheel dollying. |
 | `.truckSpeed`             | `number`  | `2.0`       | Speed of drag for truck and pedestal. |
 | `.verticalDragToForward`  | `boolean` | `false`     | The same as `.screenSpacePanning` in three.js's OrbitControls. |
 | `.dollyToCursor`          | `boolean` | `false`     | `true` to enable Dolly-in to the mouse cursor coords. |
-| `.colliderMeshes`         | `array`   | `[]`        | An array of Meshes to collide with camera ¹. |
-| `.infinityDolly`          | `boolean` | `false`     | `true` to enable Infinity Dolly ². |
+| `.colliderMeshes`         | `array`   | `[]`        | An array of Meshes to collide with camera ². |
+| `.infinityDolly`          | `boolean` | `false`     | `true` to enable Infinity Dolly ³. |
+| `.restThreshold`          | `number`  | `0.0025`    | Controls how soon the `rest` event fires as the camera slows |
 
-1. Be aware colliderMeshes may decrease performance. Collision test uses 4 raycasters from camera, since near plane has 4 corners.
-2. When the Dolly distance less than the minDistance, the sphere of radius will set minDistance.
+1. Every 360 degrees turn is added to `.azimuthAngle` value, which is accumulative.  
+  `360º = 360 * THREE.MathUtils.DEG2RAD = Math.PI * 2`, `720º = Math.PI * 4`.  
+  **Tip**: [How to normalize accumulated azimuthAngle?](#tips)
+2. Be aware colliderMeshes may decrease performance. The collision test uses 4 raycasters from the camera since the near plane has 4 corners.
+3. When the Dolly distance is less than the `minDistance`, radius of the sphere will be set `minDistance` automatically.
 
 ## Events
 
-CameraControls instance emits the following events.
-To subscribe, use `cameraControl.addEventListener( 'eventname', function )`.
+CameraControls instance emits the following events.  
+To subscribe, use `cameraControl.addEventListener( 'eventname', function )`.  
 To unsubscribe, use `cameraControl.removeEventListener( 'eventname', function )`.
 
-| Event name       | Timing |
-| ---------------- | ------ |
-| `'controlstart'` | When the user starts to control the camera via mouse / touches. |
-| `'control'`      | When the user controls the camera (dragging). |
-| `'controlend'`   | When the user ends to control the camera. |
-| `'update'`       | When the camera position is updated. |
-| `'wake'`         | When the camera start moving. |
-| `'sleep'`        | When the camera end moving. |
+| Event name          | Timing |
+| ------------------- | ------ |
+| `'controlstart'`    | When the user starts to control the camera via mouse / touches. |
+| `'control'`         | When the user controls the camera (dragging). |
+| `'controlend'`      | When the user ends to control the camera. |
+| `'transitionstart'` | When any kind of transition starts, either user control or using a method with `enableTransition = true` |
+| `'update'`          | When the camera position is updated. |
+| `'wake'`            | When the camera starts moving. |
+| `'rest'`            | When the camera movement is below `.restThreshold` ¹. |
+| `'sleep'`           | When the camera end moving. |
+
+1. Due to damping, `sleep` will usually fire a few seconds after the camera _appears_ to have stopped moving. If you want to do something (e.g. enable UI, perform another transition) at the point when the camera has stopped, you probably want the `rest` event. This can be fine tuned using the `.restThreshold` parameter. See the [Rest and Sleep Example](https://yomotsu.github.io/camera-controls/examples/rest-and-sleep.html).
 
 ## User input config
 
@@ -190,8 +206,12 @@ Working example: [user input config](https://yomotsu.github.io/camera-controls/e
 | --------------------- | -------- |
 | `mouseButtons.left`   | `CameraControls.ACTION.ROTATE`* \| `CameraControls.ACTION.TRUCK` \| `CameraControls.ACTION.OFFSET` \| `CameraControls.ACTION.DOLLY` \| `CameraControls.ACTION.ZOOM` \| `CameraControls.ACTION.NONE` |
 | `mouseButtons.right`  | `CameraControls.ACTION.ROTATE` \| `CameraControls.ACTION.TRUCK`* \| `CameraControls.ACTION.OFFSET` \| `CameraControls.ACTION.DOLLY` \| `CameraControls.ACTION.ZOOM` \| `CameraControls.ACTION.NONE` |
-| `mouseButtons.wheel`  | `CameraControls.ACTION.ROTATE` \| `CameraControls.ACTION.TRUCK` \| `CameraControls.ACTION.OFFSET` \| `CameraControls.ACTION.DOLLY` \| `CameraControls.ACTION.ZOOM` \| `CameraControls.ACTION.NONE` |
 | `mouseButtons.shiftLeft`   | `CameraControls.ACTION.ROTATE` \| `CameraControls.ACTION.TRUCK` \| `CameraControls.ACTION.OFFSET` \| `CameraControls.ACTION.DOLLY` \| `CameraControls.ACTION.ZOOM` \| `CameraControls.ACTION.NONE`* |
+| `mouseButtons.wheel` ¹ | `CameraControls.ACTION.ROTATE` \| `CameraControls.ACTION.TRUCK` \| `CameraControls.ACTION.OFFSET` \| `CameraControls.ACTION.DOLLY` \| `CameraControls.ACTION.ZOOM` \| `CameraControls.ACTION.NONE` |
+| `mouseButtons.middle` ² | `CameraControls.ACTION.ROTATE` \| `CameraControls.ACTION.TRUCK` \| `CameraControls.ACTION.OFFSET` \| `CameraControls.ACTION.DOLLY`* \| `CameraControls.ACTION.ZOOM` \| `CameraControls.ACTION.NONE` |
+
+1. Mouse wheel event for scroll "up/down" on mac "up/down/left/right"
+2. Mouse click on wheel event "button"
 
 - \* is the default.
 - The default of `mouseButtons.wheel` is:
@@ -214,6 +234,7 @@ Working example: [user input config](https://yomotsu.github.io/camera-controls/e
 #### `rotate( azimuthAngle, polarAngle, enableTransition )`
 
 Rotate azimuthal angle(horizontal) and polar angle(vertical).
+Every value is added to the current value.
 
 | Name               | Type      | Description |
 | ------------------ | --------- | ----------- |
@@ -221,11 +242,62 @@ Rotate azimuthal angle(horizontal) and polar angle(vertical).
 | `polarAngle`       | `number`  | Polar rotate angle. In radian. |
 | `enableTransition` | `boolean` | Whether to move smoothly or immediately |
 
+If you want to rotate only one axis, put a angle for the axis to rotate, and `0` for another.
+``` js
+rotate( 20 * THREE.MathUtils.DEG2RAD, 0, true );
+```
+
+---
+
+#### `rotateAzimuthTo( azimuthAngle, enableTransition )`
+
+Rotate azimuthal angle(horizontal) to the given angle and keep the same polar angle(vertical) target.
+
+| Name               | Type      | Description |
+| ------------------ | --------- | ----------- |
+| `azimuthAngle`     | `number`  | Azimuth rotate angle. In radian. |
+| `enableTransition` | `boolean` | Whether to move smoothly or immediately |
+
+---
+
+#### `rotatePolarTo( polarAngle, enableTransition )`
+
+Rotate polar angle(vertical) to the given angle and keep the same azimuthal angle(horizontal) target.
+
+| Name               | Type      | Description |
+| ------------------ | --------- | ----------- |
+| `polarAngle`       | `number`  | Polar rotate angle. In radian. |
+| `enableTransition` | `boolean` | Whether to move smoothly or immediately |
+
 ---
 
 #### `rotateTo( azimuthAngle, polarAngle, enableTransition )`
 
-Rotate azimuthal angle(horizontal) and polar angle(vertical) to a given point.
+Rotate azimuthal angle(horizontal) and polar angle(vertical) to the given angle.
+Camera view will rotate over the orbit pivot absolutely:
+
+Azimuth angle
+```
+      0º
+      |
+90º -- -- -90º
+      |
+     180º
+```
+0º front, 90º (`Math.PI / 2`) left, -90º (`- Math.PI / 2`) right, 180º (`Math.PI`) back
+
+-----
+
+Polar angle
+```
+     180º
+      |
+      90º
+      |
+      0º
+```
+
+180º (`Math.PI`) top/sky, 90º (`Math.PI / 2`) horizontal from view, 0º bottom/floor
 
 | Name               | Type      | Description |
 | ------------------ | --------- | ----------- |
@@ -259,7 +331,8 @@ Dolly in/out camera position to given distance.
 
 #### `zoom( zoomStep, enableTransition )`
 
-Zoom in/out of camera.
+Zoom in/out camera. The value is added to camera zoom.  
+Limits set with `.minZoom` and `.maxZoom`
 
 | Name               | Type      | Description |
 | ------------------ | --------- | ----------- |
@@ -268,7 +341,7 @@ Zoom in/out of camera.
 
 You can also make zoomIn function using `camera.zoom` property.
 e.g.
-```js
+``` js
 const zoomIn  = () => cameraControls.zoom(   camera.zoom / 2, true );
 const zoomOut = () => cameraControls.zoom( - camera.zoom / 2, true );
 ```
@@ -277,12 +350,14 @@ const zoomOut = () => cameraControls.zoom( - camera.zoom / 2, true );
 
 #### `zoomTo( zoom, enableTransition )`
 
-Zoom in/out camera to given scale.
+Zoom in/out camera to given scale. The value overwrites camera zoom.  
+Limits set with `.minZoom` and `.maxZoom`
 
 | Name               | Type      | Description |
 | ------------------ | --------- | ----------- |
 | `zoom`             | `number`  | zoom scale |
 | `enableTransition` | `boolean` | Whether to move smoothly or immediately |
+
 
 ---
 
@@ -309,6 +384,18 @@ Set focal offset using the screen parallel coordinates.
 | `y`                | `number`  | Vertical offset amount |
 | `z`                | `number`  | Depth offset amount. The result is the same as Dolly but unaffected by `minDistance` and `maxDistance` |
 | `enableTransition` | `boolean` | Whether to move smoothly or immediately |
+
+---
+
+#### `setOrbitPoint( targetX, targetY, targetZ )`
+
+Set orbit point without moving the camera.
+
+| Name               | Type      | Description |
+| ------------------ | --------- | ----------- |
+| `targetX`          | `number`  | Orbit center position x |
+| `targetY`          | `number`  | Orbit center position y |
+| `targetZ`          | `number`  | Orbit center position z |
 
 ---
 
@@ -365,7 +452,7 @@ Fit the viewport to the sphere or the bounding sphere of the object.
 
 #### `setLookAt( positionX, positionY, positionZ, targetX, targetY, targetZ, enableTransition )`
 
-Make a orbit with given points.
+Make an orbit with given points.
 
 | Name               | Type      | Description |
 | ------------------ | --------- | ----------- |
@@ -397,7 +484,7 @@ Similar to `setLookAt`, but it interpolates between two states.
 | `targetBX`         | `number`  | look at position x to interpolate towards. |
 | `targetBY`         | `number`  | look at position y to interpolate towards. |
 | `targetBZ`         | `number`  | look at position z to interpolate towards. |
-| `t`                | `number`  | Interpolation factor in the closed interval [0, 1]. |
+| `t`                | `number`  | Interpolation factor in the closed interval. The value must be a number between `0` to `1` inclusive, where `1` is 100% |
 | `enableTransition` | `boolean` | Whether to move smoothly or immediately |
 
 ---
@@ -430,9 +517,8 @@ Similar to `setLookAt`, but it interpolates between two states.
 
 #### `setBoundary( box3? )`
 
-Set the boundary box that encloses the target of the camera. `box3` is in `THREE.Box3`
-
-Return its current position.
+Set the boundary box that encloses the target of the camera. `box3` is in `THREE.Box3`  
+Returns its current position.
 
 | Name   | Type          | Description |
 | ------ | ------------- | ----------- |
@@ -442,8 +528,7 @@ Return its current position.
 
 #### `setViewport( vector4? )`
 
-Set (or unset) the current viewport.
-
+Set (or unset) the current viewport.  
 Set this when you want to use renderer viewport and [`.dollyToCursor`](#properties) feature at the same time.
 
 See: [THREE.WebGLRenderer.setViewport()](https://threejs.org/docs/#api/en/renderers/WebGLRenderer.setViewport)
@@ -454,7 +539,7 @@ See: [THREE.WebGLRenderer.setViewport()](https://threejs.org/docs/#api/en/render
 
 #### `setViewport( x, y, width, height )`
 
-Same as [`setViewport( vector4 )`](#setviewport-vector4-|-null-) , but you can give it four numbers that represents a viewport instead:
+Same as [`setViewport( vector4 )`](#setviewport-vector4-|-null-), but you can give it four numbers that represents a viewport instead:
 
 | Name     | Type     | Description |
 | -------- | -------- | ----------- |
@@ -467,7 +552,7 @@ Same as [`setViewport( vector4 )`](#setviewport-vector4-|-null-) , but you can g
 
 #### `getPosition( out )`
 
-Return its current position.
+Returns its current position.
 
 | Name  | Type            | Description |
 | ----- | --------------- | ----------- |
@@ -477,7 +562,7 @@ Return its current position.
 
 #### `getTarget( out )`
 
-Return its current gazing target, which is the center position of the orbit.
+Returns its current gazing target, which is the center position of the orbit.
 
 | Name  | Type            | Description |
 | ----- | --------------- | ----------- |
@@ -487,7 +572,7 @@ Return its current gazing target, which is the center position of the orbit.
 
 #### `getFocalOffset( out )`
 
-Return its current focal offset, which is how much the camera appears to be translated in screen parallel coordinates.
+Returns its current focal offset, which is how much the camera appears to be translated in screen parallel coordinates.
 
 | Name  | Type            | Description |
 | ----- | --------------- | ----------- |
@@ -566,6 +651,41 @@ Reproduce the control state with JSON. `enableTransition` is where anim or not i
 #### `dispose()`
 
 Dispose the cameraControls instance itself, remove all eventListeners.
+
+---
+
+## Tips
+
+### Normalize accumulated azimuth angle:
+If you need a normalized accumulated azimuth angle (between 0 and 360 deg), compute with [THREE.MathUtils.euclideanModulo](https://threejs.org/docs/#api/en/math/MathUtils)
+e.g.:
+``` js
+const normalizedAzimuthAngle = THREE.MathUtils.euclideanModulo( cameraControls.azimuthAngle, 360 * THREE.MathUtils.DEG2RAD );
+```
+
+---
+### Creating Complex Transitions
+
+All methods that take the `enableTransition` parameter return a `Promise` can be used to create complex animations, for example:
+
+``` js
+async function complexTransition() {
+	await cameraControls.rotateTo( Math.PI / 2, Math.PI / 4, true );
+	await cameraControls.dollyTo( 3, true );
+	await cameraControls.fitToSphere( mesh, true );
+}
+```
+
+This will rotate the camera, then dolly, and finally fit to the bounding sphere of the `mesh`.
+
+The speed and timing of transitions can be tuned using `.restThreshold` and `.dampingFactor`.
+
+If `enableTransition` is `false`, the promise will resolve immediately:
+
+``` js
+// will resolve immediately
+await cameraControls.dollyTo( 3, false );
+```
 
 ---
 

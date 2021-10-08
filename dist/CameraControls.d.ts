@@ -1,8 +1,10 @@
 import * as _THREE from 'three';
-import { ACTION, MouseButtons, Touches, FitToOptions, CameraControlsEventMap } from './types';
+import { THREESubset, ACTION, PointerInput, MouseButtons, Touches, FitToOptions, CameraControlsEventMap } from './types';
 import { EventDispatcher } from './EventDispatcher';
 export declare class CameraControls extends EventDispatcher {
-    static install(libs: any): void;
+    static install(libs: {
+        THREE: THREESubset;
+    }): void;
     static readonly ACTION: Readonly<typeof ACTION>;
     minPolarAngle: number;
     maxPolarAngle: number;
@@ -23,6 +25,7 @@ export declare class CameraControls extends EventDispatcher {
     dragToOffset: boolean;
     verticalDragToForward: boolean;
     boundaryFriction: number;
+    restThreshold: number;
     colliderMeshes: _THREE.Object3D[];
     mouseButtons: MouseButtons;
     touches: Touches;
@@ -54,13 +57,17 @@ export declare class CameraControls extends EventDispatcher {
         _THREE.Vector3,
         _THREE.Vector3
     ];
+    protected _hasRested: boolean;
     protected _boundary: _THREE.Box3;
     protected _boundaryEnclosesCamera: boolean;
     protected _needsUpdate: boolean;
     protected _updatedLastTime: boolean;
     protected _elementRect: _THREE.Vector4;
+    protected _activePointers: PointerInput[];
     constructor(camera: _THREE.PerspectiveCamera | _THREE.OrthographicCamera, domElement: HTMLElement);
+    camera: _THREE.PerspectiveCamera | _THREE.OrthographicCamera;
     enabled: boolean;
+    readonly active: boolean;
     readonly currentAction: ACTION;
     distance: number;
     azimuthAngle: number;
@@ -68,25 +75,28 @@ export declare class CameraControls extends EventDispatcher {
     boundaryEnclosesCamera: boolean;
     addEventListener<K extends keyof CameraControlsEventMap>(type: K, listener: (event: CameraControlsEventMap[K]) => any): void;
     removeEventListener<K extends keyof CameraControlsEventMap>(type: K, listener: (event: CameraControlsEventMap[K]) => any): void;
-    rotate(azimuthAngle: number, polarAngle: number, enableTransition?: boolean): void;
-    rotateTo(azimuthAngle: number, polarAngle: number, enableTransition?: boolean): void;
-    dolly(distance: number, enableTransition?: boolean): void;
-    dollyTo(distance: number, enableTransition?: boolean): void;
-    zoom(zoomStep: number, enableTransition?: boolean): void;
-    zoomTo(zoom: number, enableTransition?: boolean): void;
-    pan(x: number, y: number, enableTransition?: boolean): void;
-    truck(x: number, y: number, enableTransition?: boolean): void;
-    forward(distance: number, enableTransition?: boolean): void;
-    moveTo(x: number, y: number, z: number, enableTransition?: boolean): void;
-    getDistanceToFitBoxFromMesh(box3OrObject: _THREE.Box3 | _THREE.Object3D, enableTransition: boolean, { paddingLeft, paddingRight, paddingBottom, paddingTop }?: Partial<FitToOptions>): number | void;
-    fitToBox(box3OrObject: _THREE.Box3 | _THREE.Object3D, enableTransition: boolean, { paddingLeft, paddingRight, paddingBottom, paddingTop }?: Partial<FitToOptions>, dataOnly?: boolean): void | number;
-    fitTo(box3OrObject: _THREE.Box3 | _THREE.Object3D, enableTransition: boolean, fitToOptions?: Partial<FitToOptions>): void;
-    fitToSphere(sphereOrMesh: _THREE.Sphere | _THREE.Object3D, enableTransition: boolean): void;
-    setLookAt(positionX: number, positionY: number, positionZ: number, targetX: number, targetY: number, targetZ: number, enableTransition?: boolean): void;
-    lerpLookAt(positionAX: number, positionAY: number, positionAZ: number, targetAX: number, targetAY: number, targetAZ: number, positionBX: number, positionBY: number, positionBZ: number, targetBX: number, targetBY: number, targetBZ: number, t: number, enableTransition?: boolean): void;
-    setPosition(positionX: number, positionY: number, positionZ: number, enableTransition?: boolean): void;
-    setTarget(targetX: number, targetY: number, targetZ: number, enableTransition?: boolean): void;
-    setFocalOffset(x: number, y: number, z: number, enableTransition?: boolean): void;
+    rotate(azimuthAngle: number, polarAngle: number, enableTransition?: boolean): Promise<void>;
+    rotateAzimuthTo(azimuthAngle: number, enableTransition?: boolean): Promise<void>;
+    rotatePolarTo(polarAngle: number, enableTransition?: boolean): Promise<void>;
+    rotateTo(azimuthAngle: number, polarAngle: number, enableTransition?: boolean): Promise<void>;
+    dolly(distance: number, enableTransition?: boolean): Promise<void>;
+    dollyTo(distance: number, enableTransition?: boolean): Promise<void>;
+    zoom(zoomStep: number, enableTransition?: boolean): Promise<void>;
+    zoomTo(zoom: number, enableTransition?: boolean): Promise<void>;
+    pan(x: number, y: number, enableTransition?: boolean): Promise<void>;
+    truck(x: number, y: number, enableTransition?: boolean): Promise<void>;
+    forward(distance: number, enableTransition?: boolean): Promise<void>;
+    moveTo(x: number, y: number, z: number, enableTransition?: boolean): Promise<void>;
+    getDistanceToFitBoxFromMesh(box3OrObject: _THREE.Box3 | _THREE.Object3D, enableTransition: boolean, { paddingLeft, paddingRight, paddingBottom, paddingTop }?: Partial<FitToOptions>): number | Promise<void[]>;
+    fitToBox(box3OrObject: _THREE.Box3 | _THREE.Object3D, enableTransition: boolean, { paddingLeft, paddingRight, paddingBottom, paddingTop }?: Partial<FitToOptions>, dataOnly?: boolean): Promise<void[]> | number;
+    fitTo(box3OrObject: _THREE.Box3 | _THREE.Object3D, enableTransition: boolean, fitToOptions?: Partial<FitToOptions>): Promise<void[]>;
+    fitToSphere(sphereOrMesh: _THREE.Sphere | _THREE.Object3D, enableTransition: boolean): Promise<void[]>;
+    setLookAt(positionX: number, positionY: number, positionZ: number, targetX: number, targetY: number, targetZ: number, enableTransition?: boolean): Promise<void>;
+    lerpLookAt(positionAX: number, positionAY: number, positionAZ: number, targetAX: number, targetAY: number, targetAZ: number, positionBX: number, positionBY: number, positionBZ: number, targetBX: number, targetBY: number, targetBZ: number, t: number, enableTransition?: boolean): Promise<void>;
+    setPosition(positionX: number, positionY: number, positionZ: number, enableTransition?: boolean): Promise<void>;
+    setTarget(targetX: number, targetY: number, targetZ: number, enableTransition?: boolean): Promise<void>;
+    setFocalOffset(x: number, y: number, z: number, enableTransition?: boolean): Promise<void>;
+    setOrbitPoint(targetX: number, targetY: number, targetZ: number): void;
     setBoundary(box3: _THREE.Box3): void;
     setViewport(viewportOrX: _THREE.Vector4 | number | null, y: number, width: number, height: number): void;
     getDistanceToFitBox(width: number, height: number, depth: number): number;
@@ -96,13 +106,14 @@ export declare class CameraControls extends EventDispatcher {
     getPosition(out: _THREE.Vector3): _THREE.Vector3;
     getFocalOffset(out: _THREE.Vector3): _THREE.Vector3;
     normalizeRotations(): void;
-    reset(enableTransition?: boolean): void;
+    reset(enableTransition?: boolean): Promise<void[]>;
     saveState(): void;
     updateCameraUp(): void;
     update(delta: number): boolean;
     toJSON(): string;
     fromJSON(json: string, enableTransition?: boolean): void;
     dispose(): void;
+    protected _findPointerById(pointerId: number): PointerInput | null;
     protected _encloseToBoundary(position: _THREE.Vector3, offset: _THREE.Vector3, friction: number): _THREE.Vector3;
     protected _updateNearPlaneCorners(): void;
     protected _truckInternal: (deltaX: number, deltaY: number, dragToOffset: boolean) => void;
@@ -111,5 +122,6 @@ export declare class CameraControls extends EventDispatcher {
     protected _zoomInternal: (delta: number, x: number, y: number) => void;
     protected _collisionTest(): number;
     protected _getClientRect(target: _THREE.Vector4): _THREE.Vector4;
+    protected _createOnRestPromise(resolveImmediately: boolean): Promise<void>;
     protected _removeAllEventListeners(): void;
 }

@@ -1,5 +1,6 @@
 import type * as _THREE from 'three';
 import {
+	THREESubset,
 	ACTION,
 	PointerInput,
 	MouseButtons,
@@ -12,7 +13,6 @@ import {
 import {
 	PI_2,
 	PI_HALF,
-	FPS_60,
 } from './constants';
 import {
 	approxZero,
@@ -32,7 +32,7 @@ const isPointerEventsNotSupported = ! ( isBrowser && 'PointerEvent' in window );
 const readonlyACTION = Object.freeze( ACTION );
 const TOUCH_DOLLY_FACTOR = 1 / 8;
 
-let THREE: any;
+let THREE: THREESubset;
 let _ORIGIN: _THREE.Vector3;
 let _AXIS_Y: _THREE.Vector3;
 let _AXIS_Z: _THREE.Vector3;
@@ -55,7 +55,7 @@ let _raycaster: _THREE.Raycaster;
 
 export class CameraControls extends EventDispatcher {
 
-	static install( libs: any ): void {
+	static install( libs: { THREE: THREESubset } ): void {
 
 		THREE = libs.THREE;
 		_ORIGIN = Object.freeze( new THREE.Vector3( 0, 0, 0 ) );
@@ -111,6 +111,8 @@ export class CameraControls extends EventDispatcher {
 
 	boundaryFriction = 0.0;
 
+	restThreshold = 0.01;
+
 	colliderMeshes: _THREE.Object3D[] = [];
 
 	// button configs
@@ -153,6 +155,8 @@ export class CameraControls extends EventDispatcher {
 
 	// collisionTest uses nearPlane. ( PerspectiveCamera only )
 	protected _nearPlaneCorners: [ _THREE.Vector3, _THREE.Vector3, _THREE.Vector3, _THREE.Vector3 ];
+
+	protected _hasRested = true;
 
 	protected _boundary: _THREE.Box3;
 	protected _boundaryEnclosesCamera = false;
@@ -422,13 +426,13 @@ export class CameraControls extends EventDispatcher {
 
 				if ( event.cancelable ) event.preventDefault();
 
-				const pointerId = ( event as PointerEvent ).pointerId;
+				const pointerId = event.pointerId;
 				const pointer = this._findPointerById( pointerId );
 
 				if ( ! pointer ) return;
 
-				pointer.clientX = ( event as PointerEvent ).clientX;
-				pointer.clientY = ( event as PointerEvent ).clientY;
+				pointer.clientX = event.clientX;
+				pointer.clientY = event.clientY;
 
 				dragging();
 
@@ -440,8 +444,8 @@ export class CameraControls extends EventDispatcher {
 
 				if ( ! pointer ) return;
 
-				pointer.clientX = ( event as PointerEvent ).clientX;
-				pointer.clientY = ( event as PointerEvent ).clientY;
+				pointer.clientX = event.clientX;
+				pointer.clientY = event.clientY;
 
 				dragging();
 
@@ -719,7 +723,8 @@ export class CameraControls extends EventDispatcher {
 						const dollyY = this.dollyToCursor ? ( lastDragPosition.y - this._elementRect.y ) / this._elementRect.w * - 2 + 1 : 0;
 
 						this._state === ACTION.TOUCH_DOLLY ||
-						this._state === ACTION.TOUCH_DOLLY_TRUCK ?
+						this._state === ACTION.TOUCH_DOLLY_TRUCK ||
+						this._state === ACTION.TOUCH_DOLLY_OFFSET ?
 							this._dollyInternal( dollyDelta * TOUCH_DOLLY_FACTOR, dollyX, dollyY ) :
 							this._zoomInternal( dollyDelta * TOUCH_DOLLY_FACTOR, dollyX, dollyY );
 
@@ -786,7 +791,7 @@ export class CameraControls extends EventDispatcher {
 
 			};
 
-			// this._domElement.addEventListener( 'pointerdown', onPointerDown );
+			this._domElement.addEventListener( 'pointerdown', onPointerDown );
 			isPointerEventsNotSupported && this._domElement.addEventListener( 'mousedown', onMouseDown );
 			isPointerEventsNotSupported && this._domElement.addEventListener( 'touchstart', onTouchStart );
 			this._domElement.addEventListener( 'pointercancel', onPointerUp );
@@ -830,6 +835,22 @@ export class CameraControls extends EventDispatcher {
 
 	}
 
+	get camera(): _THREE.PerspectiveCamera | _THREE.OrthographicCamera {
+
+		return this._camera;
+
+	}
+
+	set camera( camera: _THREE.PerspectiveCamera | _THREE.OrthographicCamera ) {
+
+		this._camera = camera;
+		this.updateCameraUp();
+		this._camera.updateProjectionMatrix();
+		this._updateNearPlaneCorners();
+		this._needsUpdate = true;
+
+	}
+
 	get enabled(): boolean {
 
 		return this._enabled;
@@ -840,6 +861,12 @@ export class CameraControls extends EventDispatcher {
 
 		this._enabled = enabled;
 		if ( ! enabled ) this.cancel();
+
+	}
+
+	get active(): boolean {
+
+		return ! this._hasRested;
 
 	}
 
@@ -855,7 +882,7 @@ export class CameraControls extends EventDispatcher {
 
 	}
 
-	set distance( distance ) {
+	set distance( distance: number ) {
 
 		if (
 			this._spherical.radius === distance &&
@@ -875,7 +902,7 @@ export class CameraControls extends EventDispatcher {
 
 	}
 
-	set azimuthAngle( azimuthAngle ) {
+	set azimuthAngle( azimuthAngle: number ) {
 
 		if (
 			this._spherical.theta === azimuthAngle &&
@@ -895,7 +922,7 @@ export class CameraControls extends EventDispatcher {
 
 	}
 
-	set polarAngle( polarAngle ) {
+	set polarAngle( polarAngle: number ) {
 
 		if (
 			this._spherical.phi === polarAngle &&
@@ -914,13 +941,18 @@ export class CameraControls extends EventDispatcher {
 
 	}
 
-	set boundaryEnclosesCamera( boundaryEnclosesCamera ) {
+	set boundaryEnclosesCamera( boundaryEnclosesCamera: boolean ) {
 
 		this._boundaryEnclosesCamera = boundaryEnclosesCamera;
 		this._needsUpdate = true;
 
 	}
 
+	/**
+	 * Adds the specified event listener.
+	 * @param type event name
+	 * @param listener handler function
+	 */
 	addEventListener<K extends keyof CameraControlsEventMap>(
 		type: K,
 		listener: ( event: CameraControlsEventMap[ K ] ) => any,
@@ -930,6 +962,11 @@ export class CameraControls extends EventDispatcher {
 
 	}
 
+	/**
+	 * Removes the specified event listener
+	 * @param type event name
+	 * @param listener handler function
+	 */
 	removeEventListener<K extends keyof CameraControlsEventMap>(
 		type: K,
 		listener: ( event: CameraControlsEventMap[ K ] ) => any,
@@ -939,11 +976,15 @@ export class CameraControls extends EventDispatcher {
 
 	}
 
-	// azimuthAngle in radian
-	// polarAngle in radian
-	rotate( azimuthAngle: number, polarAngle: number, enableTransition: boolean = false ): void {
+	/**
+	 * Rotate azimuthal angle(horizontal) and polar angle(vertical). Every value is added to the current value.
+	 * @param azimuthAngle Azimuth rotate angle. In radian.
+	 * @param polarAngle Polar rotate angle. In radian.
+	 * @param enableTransition Whether to move smoothly or immediately
+	 */
+	rotate( azimuthAngle: number, polarAngle: number, enableTransition: boolean = false ): Promise<void> {
 
-		this.rotateTo(
+		return this.rotateTo(
 			this._sphericalEnd.theta + azimuthAngle,
 			this._sphericalEnd.phi   + polarAngle,
 			enableTransition,
@@ -951,9 +992,44 @@ export class CameraControls extends EventDispatcher {
 
 	}
 
-	// azimuthAngle in radian
-	// polarAngle in radian
-	rotateTo( azimuthAngle: number, polarAngle: number, enableTransition: boolean = false ): void {
+	/**
+	 * Rotate azimuthal angle(horizontal) to the given angle and keep the same polar angle(vertical) target.
+	 * @param azimuthAngle Azimuth rotate angle. In radian.
+	 * @param enableTransition Whether to move smoothly or immediately
+	 */
+	rotateAzimuthTo( azimuthAngle: number, enableTransition: boolean = false ): Promise<void> {
+
+		return this.rotateTo(
+			this._sphericalEnd.theta + azimuthAngle,
+			this._sphericalEnd.phi,
+			enableTransition,
+		);
+
+	}
+
+	/**
+	 * Rotate polar angle(vertical) to the given angle and keep the same azimuthal angle(horizontal) target.
+	 * @param polarAngle Polar rotate angle. In radian.
+	 * @param enableTransition Whether to move smoothly or immediately
+	 */
+	rotatePolarTo( polarAngle: number, enableTransition: boolean = false ): Promise<void> {
+
+		return this.rotateTo(
+			this._sphericalEnd.theta,
+			this._sphericalEnd.phi + polarAngle,
+			enableTransition,
+		);
+
+	}
+
+	/**
+	 * Rotate azimuthal angle(horizontal) and polar angle(vertical) to the given angle.
+	 * Camera view will rotate over the orbit pivot absolutely
+	 * @param azimuthAngle Azimuth rotate angle to. In radian.
+	 * @param polarAngle Polar rotate angle to. In radian.
+	 * @param enableTransition  Whether to move smoothly or immediately
+	 */
+	rotateTo( azimuthAngle: number, polarAngle: number, enableTransition: boolean = false ): Promise<void> {
 
 		const theta = THREE.MathUtils.clamp( azimuthAngle, this.minAzimuthAngle, this.maxAzimuthAngle );
 		const phi   = THREE.MathUtils.clamp( polarAngle,   this.minPolarAngle,   this.maxPolarAngle );
@@ -962,6 +1038,8 @@ export class CameraControls extends EventDispatcher {
 		this._sphericalEnd.phi   = phi;
 		this._sphericalEnd.makeSafe();
 
+		this._needsUpdate = true;
+
 		if ( ! enableTransition ) {
 
 			this._spherical.theta = this._sphericalEnd.theta;
@@ -969,17 +1047,30 @@ export class CameraControls extends EventDispatcher {
 
 		}
 
-		this._needsUpdate = true;
+		const resolveImmediately = ! enableTransition ||
+			approxEquals( this._spherical.theta, this._sphericalEnd.theta, this.restThreshold ) &&
+			approxEquals( this._spherical.phi, this._sphericalEnd.phi, this.restThreshold );
+		return this._createOnRestPromise( resolveImmediately );
 
 	}
 
-	dolly( distance: number, enableTransition: boolean = false ): void {
+	/**
+	 * Dolly in/out camera position.
+	 * @param distance Distance of dollyIn. Negative number for dollyOut.
+	 * @param enableTransition Whether to move smoothly or immediately.
+	 */
+	dolly( distance: number, enableTransition: boolean = false ): Promise<void> {
 
-		this.dollyTo( this._sphericalEnd.radius - distance, enableTransition );
+		return this.dollyTo( this._sphericalEnd.radius - distance, enableTransition );
 
 	}
 
-	dollyTo( distance: number, enableTransition: boolean = false ): void {
+	/**
+	 * Dolly in/out camera position to given distance.
+	 * @param distance Distance of dolly.
+	 * @param enableTransition Whether to move smoothly or immediately.
+	 */
+	dollyTo( distance: number, enableTransition: boolean = false ): Promise<void> {
 
 		const lastRadius = this._sphericalEnd.radius;
 		const newRadius = THREE.MathUtils.clamp( distance, this.minDistance, this.maxDistance );
@@ -991,7 +1082,7 @@ export class CameraControls extends EventDispatcher {
 			const isCollided = approxEquals( maxDistanceByCollisionTest, this._spherical.radius );
 			const isDollyIn = lastRadius > newRadius;
 
-			if ( ! isDollyIn && isCollided ) return;
+			if ( ! isDollyIn && isCollided ) return Promise.resolve();
 
 			this._sphericalEnd.radius = Math.min( newRadius, maxDistanceByCollisionTest );
 
@@ -1001,25 +1092,41 @@ export class CameraControls extends EventDispatcher {
 
 		}
 
+		this._needsUpdate = true;
+
 		if ( ! enableTransition ) {
 
 			this._spherical.radius = this._sphericalEnd.radius;
 
 		}
 
-		this._needsUpdate = true;
+		const resolveImmediately =  ! enableTransition || approxEquals( this._spherical.radius, this._sphericalEnd.radius, this.restThreshold );
+		return this._createOnRestPromise( resolveImmediately );
 
 	}
 
-	zoom( zoomStep: number, enableTransition: boolean = false ): void {
+	/**
+	 * Zoom in/out camera. The value is added to camera zoom.
+	 * Limits set with `.minZoom` and `.maxZoom`
+	 * @param zoomStep zoom scale
+	 * @param enableTransition Whether to move smoothly or immediately
+	 */
+	zoom( zoomStep: number, enableTransition: boolean = false ): Promise<void> {
 
-		this.zoomTo( this._zoomEnd + zoomStep, enableTransition );
+		return this.zoomTo( this._zoomEnd + zoomStep, enableTransition );
 
 	}
 
-	zoomTo( zoom: number, enableTransition: boolean = false ): void {
+	/**
+	 * Zoom in/out camera to given scale. The value overwrites camera zoom.
+	 * Limits set with .minZoom and .maxZoom
+	 * @param zoom
+	 * @param enableTransition
+	 */
+	zoomTo( zoom: number, enableTransition: boolean = false ): Promise<void> {
 
 		this._zoomEnd = THREE.MathUtils.clamp( zoom, this.minZoom, this.maxZoom );
+		this._needsUpdate = true;
 
 		if ( ! enableTransition ) {
 
@@ -1027,18 +1134,25 @@ export class CameraControls extends EventDispatcher {
 
 		}
 
-		this._needsUpdate = true;
+		const resolveImmediately = ! enableTransition || approxEquals( this._zoom, this._zoomEnd, this.restThreshold );
+		return this._createOnRestPromise( resolveImmediately );
 
 	}
 
-	pan( x: number, y: number, enableTransition: boolean = false ): void {
+	pan( x: number, y: number, enableTransition: boolean = false ): Promise<void> {
 
-		console.log( '`pan` has been renamed to `truck`' );
-		this.truck( x, y, enableTransition );
+		console.warn( '`pan` has been renamed to `truck`' );
+		return this.truck( x, y, enableTransition );
 
 	}
 
-	truck( x: number, y: number, enableTransition: boolean = false ): void {
+	/**
+	 * Truck and pedestal camera using current azimuthal angle
+	 * @param x Horizontal translate amount
+	 * @param y Vertical translate amount
+	 * @param enableTransition Whether to move smoothly or immediately
+	 */
+	truck( x: number, y: number, enableTransition: boolean = false ): Promise<void> {
 
 		this._camera.updateMatrix();
 
@@ -1048,39 +1162,40 @@ export class CameraControls extends EventDispatcher {
 		_yColumn.multiplyScalar( - y );
 
 		const offset = _v3A.copy( _xColumn ).add( _yColumn );
-		this._encloseToBoundary( this._targetEnd, offset, this.boundaryFriction );
-
-		if ( ! enableTransition ) {
-
-			this._target.copy( this._targetEnd );
-
-		}
-
-		this._needsUpdate = true;
+		const to = _v3B.copy( this._targetEnd ).add( offset );
+		return this.moveTo( to.x, to.y, to.z, enableTransition );
 
 	}
 
-	forward( distance: number, enableTransition: boolean = false ): void {
+	/**
+	 * Move forward / backward.
+	 * @param distance Amount to move forward / backward. Negative value to move backward
+	 * @param enableTransition Whether to move smoothly or immediately
+	 */
+	forward( distance: number, enableTransition: boolean = false ): Promise<void> {
 
 		_v3A.setFromMatrixColumn( this._camera.matrix, 0 );
 		_v3A.crossVectors( this._camera.up, _v3A );
 		_v3A.multiplyScalar( distance );
 
-		this._encloseToBoundary( this._targetEnd, _v3A, this.boundaryFriction );
-
-		if ( ! enableTransition ) {
-
-			this._target.copy( this._targetEnd );
-
-		}
-
-		this._needsUpdate = true;
+		const to = _v3B.copy( this._targetEnd ).add( _v3A );
+		return this.moveTo( to.x, to.y, to.z, enableTransition );
 
 	}
 
-	moveTo( x: number, y: number, z: number, enableTransition: boolean = false ): void {
+	/**
+	 * Move target position to given point.
+	 * @param x x coord to move center position
+	 * @param y y coord to move center position
+	 * @param z z coord to move center position
+	 * @param enableTransition Whether to move smoothly or immediately
+	 */
+	moveTo( x: number, y: number, z: number, enableTransition: boolean = false ): Promise<void> {
 
-		this._targetEnd.set( x, y, z );
+		const offset = _v3A.set( x, y, z ).sub( this._targetEnd );
+		this._encloseToBoundary( this._targetEnd, offset, this.boundaryFriction );
+
+		this._needsUpdate = true;
 
 		if ( ! enableTransition ) {
 
@@ -1088,7 +1203,11 @@ export class CameraControls extends EventDispatcher {
 
 		}
 
-		this._needsUpdate = true;
+		const resolveImmediately = ! enableTransition ||
+			approxEquals( this._target.x, this._targetEnd.x, this.restThreshold ) &&
+			approxEquals( this._target.y, this._targetEnd.y, this.restThreshold ) &&
+			approxEquals( this._target.z, this._targetEnd.z, this.restThreshold );
+		return this._createOnRestPromise( resolveImmediately );
 
 	}
 
@@ -1106,13 +1225,20 @@ export class CameraControls extends EventDispatcher {
 		}, true);
 	}
 
+	/**
+	 * Fit the viewport to the box or the bounding box of the object, using the nearest axis. paddings are in unit
+	 * @param box3OrObject Axis aligned bounding box to fit the view.
+	 * @param enableTransition Whether to move smoothly or immediately
+	 * @param options | <object> { paddingTop, paddingLeft, paddingBottom, paddingRight }
+	 */
 	fitToBox( box3OrObject: _THREE.Box3 | _THREE.Object3D, enableTransition: boolean, {
 		paddingLeft = 0,
 		paddingRight = 0,
 		paddingBottom = 0,
 		paddingTop = 0
-	}: Partial<FitToOptions> = {}, dataOnly: boolean = false ): void | number {
+	}: Partial<FitToOptions> = {}, dataOnly: boolean = false ): Promise<void[]> | number {
 
+		const promises = [];
 		const aabb = ( box3OrObject as _THREE.Box3 ).isBox3
 			? _box3A.copy( box3OrObject as _THREE.Box3 )
 			: _box3A.setFromObject( box3OrObject as _THREE.Object3D );
@@ -1120,7 +1246,7 @@ export class CameraControls extends EventDispatcher {
 		if ( aabb.isEmpty() )  {
 
 			console.warn( 'camera-controls: fitTo() cannot be used with an empty box. Aborting' );
-			return;
+			Promise.resolve();
 
 		}
 
@@ -1128,7 +1254,7 @@ export class CameraControls extends EventDispatcher {
 		const theta = roundToStep( this._sphericalEnd.theta, PI_HALF );
 		const phi   = roundToStep( this._sphericalEnd.phi,   PI_HALF );
 
-		this.rotateTo( theta, phi, enableTransition );
+		promises.push( this.rotateTo( theta, phi, enableTransition ) );
 
 		const normal = _v3A.setFromSpherical( this._sphericalEnd ).normalize();
 		const rotation = _quaternionA.setFromUnitVectors( normal, _AXIS_Z );
@@ -1193,10 +1319,9 @@ export class CameraControls extends EventDispatcher {
 				return distance;
 			}
 
-			this.moveTo( center.x, center.y, center.z, enableTransition );
-			this.dollyTo( distance, enableTransition );
-			this.setFocalOffset( 0, 0, 0, enableTransition );
-			return;
+			promises.push( this.moveTo( center.x, center.y, center.z, enableTransition ) );
+			promises.push( this.dollyTo( distance, enableTransition ) );
+			promises.push( this.setFocalOffset( 0, 0, 0, enableTransition ) );
 
 		} else if ( isOrthographicCamera( this._camera ) ) {
 
@@ -1204,43 +1329,50 @@ export class CameraControls extends EventDispatcher {
 			const width = camera.right - camera.left;
 			const height = camera.top - camera.bottom;
 			const zoom = Math.min( width / bbSize.x, height / bbSize.y );
-			this.moveTo( center.x, center.y, center.z, enableTransition );
-			this.zoomTo( zoom, enableTransition );
-			this.setFocalOffset( 0, 0, 0, enableTransition );
-			return;
+			promises.push( this.moveTo( center.x, center.y, center.z, enableTransition ) );
+			promises.push( this.zoomTo( zoom, enableTransition ) );
+			promises.push( this.setFocalOffset( 0, 0, 0, enableTransition ) );
 
 		}
+
+		return Promise.all( promises );
 
 	}
 
 	/**
 	 * @deprecated fitTo() has been renamed to fitToBox()
 	 */
-	fitTo( box3OrObject: _THREE.Box3 | _THREE.Object3D, enableTransition: boolean, fitToOptions: Partial<FitToOptions> = {} ): void {
+	fitTo( box3OrObject: _THREE.Box3 | _THREE.Object3D, enableTransition: boolean, fitToOptions: Partial<FitToOptions> = {} ): Promise<void[]> {
 
 		console.warn( 'camera-controls: fitTo() has been renamed to fitToBox()' );
-		this.fitToBox( box3OrObject, enableTransition, fitToOptions );
+		return this.fitToBox( box3OrObject, enableTransition, fitToOptions ) as Promise<void[]>;
 
 	}
 
-	fitToSphere( sphereOrMesh: _THREE.Sphere | _THREE.Object3D, enableTransition: boolean ): void {
+	/**
+	 * Fit the viewport to the sphere or the bounding sphere of the object.
+	 * @param sphereOrMesh
+	 * @param enableTransition
+	 */
+	fitToSphere( sphereOrMesh: _THREE.Sphere | _THREE.Object3D, enableTransition: boolean ): Promise<void[]> {
 
+		const promises = [];
 		const isSphere = sphereOrMesh instanceof THREE.Sphere;
 		const boundingSphere = isSphere ?
 			_sphere.copy( sphereOrMesh as _THREE.Sphere ) :
 			createBoundingSphere( sphereOrMesh as _THREE.Object3D, _sphere );
 
-		this.moveTo(
+		promises.push( this.moveTo(
 			boundingSphere.center.x,
 			boundingSphere.center.y,
 			boundingSphere.center.z,
 			enableTransition,
-		);
+		) );
 
 		if ( isPerspectiveCamera( this._camera ) ) {
 
 			const distanceToFit = this.getDistanceToFitSphere( boundingSphere.radius );
-			this.dollyTo( distanceToFit, enableTransition );
+			promises.push( this.dollyTo( distanceToFit, enableTransition ) );
 
 		} else if ( isOrthographicCamera( this._camera ) ) {
 
@@ -1248,26 +1380,40 @@ export class CameraControls extends EventDispatcher {
 			const height = this._camera.top - this._camera.bottom;
 			const diameter = 2 * boundingSphere.radius;
 			const zoom = Math.min( width / diameter, height / diameter );
-			this.zoomTo( zoom, enableTransition );
+			promises.push( this.zoomTo( zoom, enableTransition ) );
 
 		}
 
-		this.setFocalOffset( 0, 0, 0, enableTransition );
+		promises.push( this.setFocalOffset( 0, 0, 0, enableTransition ) );
+
+		return Promise.all( promises );
 
 	}
 
+	/**
+	 * Make an orbit with given points.
+	 * @param positionX
+	 * @param positionY
+	 * @param positionZ
+	 * @param targetX
+	 * @param targetY
+	 * @param targetZ
+	 * @param enableTransition
+	 */
 	setLookAt(
 		positionX: number, positionY: number, positionZ: number,
 		targetX: number, targetY: number, targetZ: number,
 		enableTransition: boolean = false,
-	): void {
+	): Promise<void> {
 
-		const position = _v3A.set( positionX, positionY, positionZ );
 		const target = _v3B.set( targetX, targetY, targetZ );
+		const position = _v3A.set( positionX, positionY, positionZ );
 
 		this._targetEnd.copy( target );
 		this._sphericalEnd.setFromVector3( position.sub( target ).applyQuaternion( this._yAxisUpSpace ) );
 		this.normalizeRotations();
+
+		this._needsUpdate = true;
 
 		if ( ! enableTransition ) {
 
@@ -1276,10 +1422,34 @@ export class CameraControls extends EventDispatcher {
 
 		}
 
-		this._needsUpdate = true;
+		const resolveImmediately = ! enableTransition ||
+			approxEquals( this._target.x, this._targetEnd.x, this.restThreshold ) &&
+			approxEquals( this._target.y, this._targetEnd.y, this.restThreshold ) &&
+			approxEquals( this._target.z, this._targetEnd.z, this.restThreshold ) &&
+			approxEquals( this._spherical.theta, this._sphericalEnd.theta, this.restThreshold ) &&
+			approxEquals( this._spherical.phi, this._sphericalEnd.phi, this.restThreshold ) &&
+			approxEquals( this._spherical.radius, this._sphericalEnd.radius, this.restThreshold );
+		return this._createOnRestPromise( resolveImmediately );
 
 	}
 
+	/**
+	 * Similar to setLookAt, but it interpolates between two states.
+	 * @param positionAX
+	 * @param positionAY
+	 * @param positionAZ
+	 * @param targetAX
+	 * @param targetAY
+	 * @param targetAZ
+	 * @param positionBX
+	 * @param positionBY
+	 * @param positionBZ
+	 * @param targetBX
+	 * @param targetBY
+	 * @param targetBZ
+	 * @param t
+	 * @param enableTransition
+	 */
 	lerpLookAt(
 		positionAX: number, positionAY: number, positionAZ: number,
 		targetAX: number, targetAY: number, targetAZ: number,
@@ -1287,17 +1457,17 @@ export class CameraControls extends EventDispatcher {
 		targetBX: number, targetBY: number, targetBZ: number,
 		t: number,
 		enableTransition: boolean = false,
-	): void {
+	): Promise<void> {
 
-		const positionA = _v3A.set( positionAX, positionAY, positionAZ );
-		const targetA = _v3B.set( targetAX, targetAY, targetAZ );
+		const targetA = _v3A.set( targetAX, targetAY, targetAZ );
+		const positionA = _v3B.set( positionAX, positionAY, positionAZ );
 		_sphericalA.setFromVector3( positionA.sub( targetA ).applyQuaternion( this._yAxisUpSpace ) );
 
-		const targetB = _v3A.set( targetBX, targetBY, targetBZ );
-		this._targetEnd.copy( targetA ).lerp( targetB, t ); // tricky
-
+		const targetB = _v3C.set( targetBX, targetBY, targetBZ );
 		const positionB = _v3B.set( positionBX, positionBY, positionBZ );
 		_sphericalB.setFromVector3( positionB.sub( targetB ).applyQuaternion( this._yAxisUpSpace ) );
+
+		this._targetEnd.copy( targetA.lerp( targetB, t ) ); // tricky
 
 		const deltaTheta  = _sphericalB.theta  - _sphericalA.theta;
 		const deltaPhi    = _sphericalB.phi    - _sphericalA.phi;
@@ -1311,6 +1481,8 @@ export class CameraControls extends EventDispatcher {
 
 		this.normalizeRotations();
 
+		this._needsUpdate = true;
+
 		if ( ! enableTransition ) {
 
 			this._target.copy( this._targetEnd );
@@ -1318,13 +1490,27 @@ export class CameraControls extends EventDispatcher {
 
 		}
 
-		this._needsUpdate = true;
+		const resolveImmediately = ! enableTransition ||
+			approxEquals( this._target.x, this._targetEnd.x, this.restThreshold ) &&
+			approxEquals( this._target.y, this._targetEnd.y, this.restThreshold ) &&
+			approxEquals( this._target.z, this._targetEnd.z, this.restThreshold ) &&
+			approxEquals( this._spherical.theta, this._sphericalEnd.theta, this.restThreshold ) &&
+			approxEquals( this._spherical.phi, this._sphericalEnd.phi, this.restThreshold ) &&
+			approxEquals( this._spherical.radius, this._sphericalEnd.radius, this.restThreshold );
+		return this._createOnRestPromise( resolveImmediately );
 
 	}
 
-	setPosition( positionX: number, positionY: number, positionZ: number, enableTransition: boolean = false ): void {
+	/**
+	 * setLookAt without target, keep gazing at the current target
+	 * @param positionX
+	 * @param positionY
+	 * @param positionZ
+	 * @param enableTransition
+	 */
+	setPosition( positionX: number, positionY: number, positionZ: number, enableTransition: boolean = false ): Promise<void> {
 
-		this.setLookAt(
+		return this.setLookAt(
 			positionX, positionY, positionZ,
 			this._targetEnd.x, this._targetEnd.y, this._targetEnd.z,
 			enableTransition,
@@ -1332,10 +1518,17 @@ export class CameraControls extends EventDispatcher {
 
 	}
 
-	setTarget( targetX: number, targetY: number, targetZ: number, enableTransition: boolean = false ): void {
+	/**
+	 * setLookAt without position, Stay still at the position.
+	 * @param targetX
+	 * @param targetY
+	 * @param targetZ
+	 * @param enableTransition
+	 */
+	setTarget( targetX: number, targetY: number, targetZ: number, enableTransition: boolean = false ): Promise<void> {
 
 		const pos = this.getPosition( _v3A );
-		this.setLookAt(
+		return this.setLookAt(
 			pos.x, pos.y, pos.z,
 			targetX, targetY, targetZ,
 			enableTransition,
@@ -1343,9 +1536,17 @@ export class CameraControls extends EventDispatcher {
 
 	}
 
-	setFocalOffset( x: number, y: number, z: number, enableTransition: boolean = false ): void {
+	/**
+	 * Set focal offset using the screen parallel coordinates. z doesn't affect in Orthographic as with Dolly.
+	 * @param x
+	 * @param y
+	 * @param z
+	 * @param enableTransition
+	 */
+	setFocalOffset( x: number, y: number, z: number, enableTransition: boolean = false ): Promise<void> {
 
 		this._focalOffsetEnd.set( x, y, z );
+		this._needsUpdate = true;
 
 		if ( ! enableTransition ) {
 
@@ -1353,10 +1554,46 @@ export class CameraControls extends EventDispatcher {
 
 		}
 
-		this._needsUpdate = true;
+		const resolveImmediately = ! enableTransition ||
+			approxEquals( this._focalOffset.x, this._focalOffsetEnd.x, this.restThreshold ) &&
+			approxEquals( this._focalOffset.y, this._focalOffsetEnd.y, this.restThreshold ) &&
+			approxEquals( this._focalOffset.z, this._focalOffsetEnd.z, this.restThreshold );
+		return this._createOnRestPromise( resolveImmediately );
 
 	}
 
+	/**
+	 * Set orbit point without moving the camera.
+	 * @param targetX
+	 * @param targetY
+	 * @param targetZ
+	 */
+	setOrbitPoint( targetX: number, targetY: number, targetZ : number ) {
+
+		_xColumn.setFromMatrixColumn( this._camera.matrixWorldInverse, 0 );
+		_yColumn.setFromMatrixColumn( this._camera.matrixWorldInverse, 1 );
+		_zColumn.setFromMatrixColumn( this._camera.matrixWorldInverse, 2 );
+
+		const position = _v3A.set( targetX, targetY, targetZ );
+		const distance = position.distanceTo( this._camera.position );
+		const cameraToPoint = position.sub( this._camera.position );
+		_xColumn.multiplyScalar( cameraToPoint.x );
+		_yColumn.multiplyScalar( cameraToPoint.y );
+		_zColumn.multiplyScalar( cameraToPoint.z );
+
+		_v3A.copy( _xColumn ).add( _yColumn ).add( _zColumn );
+		_v3A.z = _v3A.z + distance;
+
+		this.dollyTo( distance, false );
+		this.setFocalOffset( - _v3A.x, _v3A.y, - _v3A.z, false );
+		this.moveTo( targetX, targetY, targetZ, false );
+
+	}
+
+	/**
+	 * Set the boundary box that encloses the target of the camera. box3 is in THREE.Box3
+	 * @param box3
+	 */
 	setBoundary( box3: _THREE.Box3 ): void {
 
 		if ( ! box3 ) {
@@ -1375,6 +1612,14 @@ export class CameraControls extends EventDispatcher {
 
 	}
 
+	/**
+	 * Set (or unset) the current viewport.
+	 * Set this when you want to use renderer viewport and .dollyToCursor feature at the same time.
+	 * @param viewportOrX
+	 * @param y
+	 * @param width
+	 * @param height
+	 */
 	setViewport( viewportOrX: _THREE.Vector4 | number | null, y: number, width: number, height: number ): void {
 
 		if ( viewportOrX === null ) { // null
@@ -1434,6 +1679,10 @@ export class CameraControls extends EventDispatcher {
 
 	}
 
+	/**
+	 * Returns its current gazing target, which is the center position of the orbit.
+	 * @param out
+	 */
 	getTarget( out: _THREE.Vector3 ): _THREE.Vector3 {
 
 		const _out = !! out && out.isVector3 ? out : new THREE.Vector3() as _THREE.Vector3;
@@ -1441,6 +1690,10 @@ export class CameraControls extends EventDispatcher {
 
 	}
 
+	/**
+	 * Returns its current position.
+	 * @param out
+	 */
 	getPosition( out: _THREE.Vector3 ): _THREE.Vector3 {
 
 		const _out = !! out && out.isVector3 ? out : new THREE.Vector3() as _THREE.Vector3;
@@ -1448,6 +1701,10 @@ export class CameraControls extends EventDispatcher {
 
 	}
 
+	/**
+	 * Returns its current focal offset, which is how much the camera appears to be translated in screen parallel coordinates.
+	 * @param out
+	 */
 	getFocalOffset( out: _THREE.Vector3 ): _THREE.Vector3 {
 
 		const _out = !! out && out.isVector3 ? out : new THREE.Vector3() as _THREE.Vector3;
@@ -1455,6 +1712,9 @@ export class CameraControls extends EventDispatcher {
 
 	}
 
+	/**
+	 * Normalize camera azimuth angle rotation between 0 and 360 degrees.
+	 */
 	normalizeRotations(): void {
 
 		this._sphericalEnd.theta = this._sphericalEnd.theta % PI_2;
@@ -1463,23 +1723,34 @@ export class CameraControls extends EventDispatcher {
 
 	}
 
-	reset( enableTransition: boolean = false ): void {
+	/**
+	 * Reset all rotation and position to default
+	 * @param enableTransition
+	 */
+	reset( enableTransition: boolean = false ): Promise<void[]> {
 
-		this.setLookAt(
-			this._position0.x, this._position0.y, this._position0.z,
-			this._target0.x, this._target0.y, this._target0.z,
-			enableTransition,
-		);
-		this.setFocalOffset(
-			this._focalOffset0.x,
-			this._focalOffset0.y,
-			this._focalOffset0.z,
-			enableTransition,
-		);
-		this.zoomTo( this._zoom0, enableTransition );
+		const promises = [
+			this.setLookAt(
+				this._position0.x, this._position0.y, this._position0.z,
+				this._target0.x, this._target0.y, this._target0.z,
+				enableTransition,
+			),
+			this.setFocalOffset(
+				this._focalOffset0.x,
+				this._focalOffset0.y,
+				this._focalOffset0.z,
+				enableTransition,
+			),
+			this.zoomTo( this._zoom0, enableTransition ),
+		];
+
+		return Promise.all( promises );
 
 	}
 
+	/**
+	 * Set current camera position as the default position.
+	 */
 	saveState(): void {
 
 		this._target0.copy( this._target );
@@ -1488,6 +1759,9 @@ export class CameraControls extends EventDispatcher {
 
 	}
 
+	/**
+	 * When you change camera-up vector, run .updateCameraUp() to sync.
+	 */
 	updateCameraUp(): void {
 
 		this._yAxisUpSpace.setFromUnitVectors( this._camera.up, _AXIS_Y );
@@ -1495,10 +1769,19 @@ export class CameraControls extends EventDispatcher {
 
 	}
 
+	/**
+	 * Update camera position and directions. This should be called in your tick loop and returns true if re-rendering is needed.
+	 * @param delta
+	 * @returns updated
+	 */
 	update( delta: number ): boolean {
 
 		const dampingFactor = this._state === ACTION.NONE ? this.dampingFactor : this.draggingDampingFactor;
-		const lerpRatio = 1.0 - Math.exp( - dampingFactor * delta * FPS_60 );
+		// The original THREE.OrbitControls assume 60 FPS fixed and does NOT rely on delta time.
+		// (that must be a problem of the original one though)
+		// To to emulate the speed of the original one under 60 FPS, multiply `60` to delta,
+		// but ours are more flexible to any FPS unlike the original.
+		const lerpRatio = dampingFactor >= 1 ? 1 : dampingFactor * delta * 60;
 
 		const deltaTheta  = this._sphericalEnd.theta  - this._spherical.theta;
 		const deltaPhi    = this._sphericalEnd.phi    - this._spherical.phi;
@@ -1639,12 +1922,31 @@ export class CameraControls extends EventDispatcher {
 
 		if ( updated && ! this._updatedLastTime ) {
 
+			this._hasRested = false;
 			this.dispatchEvent( { type: 'wake' } );
 			this.dispatchEvent( { type: 'update' } );
 
 		} else if ( updated ) {
 
 			this.dispatchEvent( { type: 'update' } );
+
+			if (
+				approxZero( deltaTheta, this.restThreshold ) &&
+				approxZero( deltaPhi, this.restThreshold ) &&
+				approxZero( deltaRadius, this.restThreshold ) &&
+				approxZero( deltaTarget.x, this.restThreshold ) &&
+				approxZero( deltaTarget.y, this.restThreshold ) &&
+				approxZero( deltaTarget.z, this.restThreshold ) &&
+				approxZero( deltaOffset.x, this.restThreshold ) &&
+				approxZero( deltaOffset.y, this.restThreshold ) &&
+				approxZero( deltaOffset.z, this.restThreshold ) &&
+				! this._hasRested
+			) {
+
+				this._hasRested = true;
+				this.dispatchEvent( { type: 'rest' } );
+
+			}
 
 		} else if ( ! updated && this._updatedLastTime ) {
 
@@ -1658,6 +1960,9 @@ export class CameraControls extends EventDispatcher {
 
 	}
 
+	/**
+	 * Get all state in JSON string
+	 */
 	toJSON(): string {
 
 		return JSON.stringify( {
@@ -1692,6 +1997,11 @@ export class CameraControls extends EventDispatcher {
 
 	}
 
+	/**
+	 * Reproduce the control state with JSON. enableTransition is where anim or not in a boolean.
+	 * @param json
+	 * @param enableTransition
+	 */
 	fromJSON( json: string, enableTransition: boolean = false ): void {
 
 		const obj = JSON.parse( json );
@@ -1729,6 +2039,9 @@ export class CameraControls extends EventDispatcher {
 
 	}
 
+	/**
+	 * Dispose the cameraControls instance itself, remove all eventListeners.
+	 */
 	dispose(): void {
 
 		this._removeAllEventListeners();
@@ -1796,7 +2109,6 @@ export class CameraControls extends EventDispatcher {
 
 	}
 
-
 	protected _updateNearPlaneCorners(): void {
 
 		if ( isPerspectiveCamera( this._camera ) )  {
@@ -1828,7 +2140,6 @@ export class CameraControls extends EventDispatcher {
 		}
 
 	}
-
 
 	protected _truckInternal = ( deltaX: number, deltaY: number, dragToOffset: boolean ): void => {
 
@@ -1892,14 +2203,15 @@ export class CameraControls extends EventDispatcher {
 		const dollyScale = Math.pow( 0.95, - delta * this.dollySpeed );
 		const distance = this._sphericalEnd.radius * dollyScale;
 		const prevRadius = this._sphericalEnd.radius;
+		const signedPrevRadius = prevRadius * ( delta >= 0 ? - 1 : 1 );
 
 		this.dollyTo( distance );
 
-		if ( this.infinityDolly && distance < this.minDistance ) {
+		if ( this.infinityDolly && ( distance < this.minDistance || this.maxDistance === this.minDistance ) ) {
 
 			this._camera.getWorldDirection( _v3A );
-			this._targetEnd.add( _v3A.normalize().multiplyScalar( prevRadius ) );
-			this._target.add( _v3A.normalize().multiplyScalar( prevRadius ) );
+			this._targetEnd.add( _v3A.normalize().multiplyScalar( signedPrevRadius ) );
+			this._target.add( _v3A.normalize().multiplyScalar( signedPrevRadius ) );
 
 		}
 
@@ -1907,9 +2219,9 @@ export class CameraControls extends EventDispatcher {
 
 			this._dollyControlAmount += this._sphericalEnd.radius - prevRadius;
 
-			if ( this.infinityDolly && distance < this.minDistance ) {
+			if ( this.infinityDolly && ( distance < this.minDistance || this.maxDistance === this.minDistance ) ) {
 
-				this._dollyControlAmount -= prevRadius;
+				this._dollyControlAmount -= signedPrevRadius;
 
 			}
 
@@ -2003,6 +2315,28 @@ export class CameraControls extends EventDispatcher {
 		}
 
 		return target;
+
+	}
+
+	protected _createOnRestPromise( resolveImmediately: boolean ): Promise<void> {
+
+		if ( resolveImmediately ) return Promise.resolve();
+
+		this._hasRested = false;
+		this.dispatchEvent( { type: 'transitionstart' } );
+
+		return new Promise( ( resolve ) => {
+
+			const onResolve = () => {
+
+				this.removeEventListener( 'rest', onResolve );
+				resolve();
+
+			};
+
+			this.addEventListener( 'rest', onResolve );
+
+		} );
 
 	}
 

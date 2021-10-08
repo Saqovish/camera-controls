@@ -1,5 +1,25 @@
 import type * as _THREE from 'three';
 
+// Is this suppose to be `Pick<typeof THREE, 'MOUSE' | 'Vector2'...>`?
+export interface THREESubset {
+	MOUSE     : typeof _THREE.MOUSE;
+	Vector2   : typeof _THREE.Vector2;
+	Vector3   : typeof _THREE.Vector3;
+	Vector4   : typeof _THREE.Vector4;
+	Quaternion: typeof _THREE.Quaternion;
+	Matrix4   : typeof _THREE.Matrix4;
+	Spherical : typeof _THREE.Spherical;
+	Box3      : typeof _THREE.Box3;
+	Sphere    : typeof _THREE.Sphere;
+	Raycaster : typeof _THREE.Raycaster;
+	MathUtils : {
+		DEG2RAD: typeof _THREE.MathUtils.DEG2RAD;
+		clamp: typeof _THREE.MathUtils.clamp;
+		[ key: string ]: any;
+	},
+	[ key: string ]: any;
+}
+
 export enum ACTION {
 	NONE,
 	ROTATE,
@@ -64,7 +84,9 @@ export interface FitToOptions {
 export interface CameraControlsEventMap {
 	update      : { type: 'update' };
 	wake        : { type: 'wake' };
+	rest       : { type: 'rest' };
 	sleep       : { type: 'sleep' };
+	transitionstart: { type: 'transitionstart' };
 	controlstart: { type: 'controlstart' };
 	control     : { type: 'control' };
 	controlend  : { type: 'controlend' };
